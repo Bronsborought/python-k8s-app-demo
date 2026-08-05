@@ -1,0 +1,21 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test-runner:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Check runner environment
+        run: |
+          echo "Workflow is running on the self-hosted runner"
+          hostname
+          docker --version
+          kubectl version --client
