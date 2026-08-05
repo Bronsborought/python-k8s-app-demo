@@ -3,7 +3,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        message = b"Hello from my-app v1\n"
+        message = b"Hello from my-app v2\n"
 
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
