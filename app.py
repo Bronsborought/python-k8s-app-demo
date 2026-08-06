@@ -1,9 +1,11 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import os
 
 
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        message = b"Hello from my-app v2\n"
+        pod_name = os.getenv("HOSTNAME", "unknown")
+        message = f"Hello from {pod_name}\n".encode()
 
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
