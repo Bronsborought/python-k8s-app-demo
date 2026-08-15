@@ -40,6 +40,12 @@ jobs:
             deployment/my-app \
             my-app=bronsboro/my-app:${{ github.sha }}
 
+      - name: Add deployment change cause
+        run: |
+          kubectl annotate deployment my-app \
+            kubernetes.io/change-cause="Deploy ${{ github.sha }}" \
+            --overwrite
+
       - name: Wait for Kubernetes rollout
         run: |
           kubectl rollout status deployment/my-app --timeout=120s
