@@ -5,7 +5,9 @@ import os
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         pod_name = os.getenv("HOSTNAME", "unknown")
-        message = f"Hello from {pod_name}\n".encode()
+        app_message = os.getenv("APP_MESSAGE", "Hello")
+
+        message = f"{app_message} | Pod: {pod_name}\n".encode()
 
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")

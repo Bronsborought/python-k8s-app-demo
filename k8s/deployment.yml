@@ -24,6 +24,13 @@ spec:
         - name: my-app
           image: bronsboro/my-app:latest
 
+          env:
+            - name: APP_MESSAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: my-app-config
+                  key: APP_MESSAGE
+
           readinessProbe:
             httpGet:
               path: /
