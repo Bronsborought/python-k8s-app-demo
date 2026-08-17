@@ -31,6 +31,12 @@ spec:
                   name: my-app-config
                   key: APP_MESSAGE
 
+            - name: APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: my-app-secret
+                  key: APP_SECRET
+
           readinessProbe:
             httpGet:
               path: /

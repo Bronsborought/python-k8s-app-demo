@@ -6,10 +6,22 @@ class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         pod_name = os.getenv("HOSTNAME", "unknown")
         app_message = os.getenv("APP_MESSAGE", "Hello")
+        app_secret = os.getenv("APP_SECRET", "")
 
-        message = f"{app_message} | Pod: {pod_name}\n".encode()
+        if self.path == "/secret":
+            provided_secret = self.headers.get("X-API-Key", "")
 
-        self.send_response(200)
+            if provided_secret != app_secret:
+                message = "Unauthorized\n".encode()
+                self.send_response(401)
+            else:
+                message = "Secret access granted\n".encode()
+                self.send_response(200)
+
+        else:
+            message = f"{app_message} | Pod: {pod_name}\n".encode()
+            self.send_response(200)
+
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", str(len(message)))
         self.end_headers()
