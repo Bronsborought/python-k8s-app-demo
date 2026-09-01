@@ -5,8 +5,35 @@ on:
     branches:
       - main
 
+  pull_request:
+    branches:
+      - main
+
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run application tests
+        run: |
+          python -m pytest -v
+
   build-push-deploy:
+    if: github.event_name == 'push'
+    needs: test
     runs-on: self-hosted
 
     steps:
@@ -34,11 +61,10 @@ jobs:
         run: |
           docker push bronsboro/my-app:${{ github.sha }}
 
-      - name: Update Kubernetes deployment
+      - name: Deploy to Kubernetes
         run: |
-          kubectl set image \
-            deployment/my-app \
-            my-app=bronsboro/my-app:${{ github.sha }}
+          sed "s|image: bronsboro/my-app:latest|image: bronsboro/my-app:${{ github.sha }}|" \
+            k8s/deployment.yml | kubectl apply -f -
 
       - name: Add deployment change cause
         run: |

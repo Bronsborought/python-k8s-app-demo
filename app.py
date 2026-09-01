@@ -1,35 +1,69 @@
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import json
+import logging
 import os
 
+from fastapi import FastAPI, Header, Request
+from fastapi.responses import PlainTextResponse
 
-class RequestHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        pod_name = os.getenv("HOSTNAME", "unknown")
-        app_message = os.getenv("APP_MESSAGE", "Hello")
-        app_secret = os.getenv("APP_SECRET", "")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger("app")
 
-        if self.path == "/secret":
-            provided_secret = self.headers.get("X-API-Key", "")
-
-            if provided_secret != app_secret:
-                message = "Unauthorized\n".encode()
-                self.send_response(401)
-            else:
-                message = "Secret access granted\n".encode()
-                self.send_response(200)
-
-        else:
-            message = f"{app_message} | Pod: {pod_name}\n".encode()
-            self.send_response(200)
-
-        self.send_header("Content-Type", "text/plain")
-        self.send_header("Content-Length", str(len(message)))
-        self.end_headers()
-
-        self.wfile.write(message)
+app = FastAPI(
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 
-server = HTTPServer(("0.0.0.0", 8000), RequestHandler)
+@app.middleware("http")
+async def log_request(request: Request, call_next):
+    response = await call_next(request)
 
-print("Server started on port 8000")
-server.serve_forever()
+    logger.info(
+        json.dumps(
+            {
+                "event": "http_request",
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+            }
+        )
+    )
+
+    return response
+
+
+@app.get("/", response_class=PlainTextResponse)
+def root():
+    pod_name = os.getenv("HOSTNAME", "unknown")
+    app_message = os.getenv("APP_MESSAGE", "Hello")
+
+    return f"{app_message} | Pod: {pod_name}\n"
+
+
+@app.get("/health", response_class=PlainTextResponse)
+def health():
+    return "Healthy\n"
+
+
+@app.get("/ready", response_class=PlainTextResponse)
+def ready():
+    app_secret = os.getenv("APP_SECRET")
+
+    if not app_secret:
+        return PlainTextResponse("Not ready\n", status_code=503)
+
+    return PlainTextResponse("Ready\n", status_code=200)
+
+
+@app.get("/secret", response_class=PlainTextResponse)
+def secret(x_api_key: str | None = Header(default=None, alias="X-API-Key")):
+    app_secret = os.getenv("APP_SECRET")
+
+    if not app_secret:
+        return PlainTextResponse("Service unavailable\n", status_code=503)
+
+    if x_api_key != app_secret:
+        return PlainTextResponse("Unauthorized\n", status_code=401)
+
+    return PlainTextResponse("Secret access granted\n", status_code=200)
