@@ -1,0 +1,41 @@
+---
+- name: Bootstrap local DevOps environment
+  hosts: local
+  become: true
+
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - git
+          - curl
+          - ca-certificates
+          - gnupg
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Check whether Docker is installed
+      ansible.builtin.command:
+        cmd: docker --version
+      register: docker_check
+      changed_when: false
+      failed_when: false
+
+    - name: Detect WSL
+      ansible.builtin.set_fact:
+        is_wsl: "{{ 'microsoft' in (ansible_kernel | lower) }}"
+
+    - name: Check whether Docker daemon is available
+      ansible.builtin.command:
+        cmd: docker info
+      register: docker_info
+      changed_when: false
+      failed_when: false
+
+    - name: Fail if Docker Desctop integration is unavailable in WSL
+      ansible.builtin.fail:
+        msg: "Docker is not available in WSL. Enable Docker WSL integration."
+      when:
+        - is_wsl
+        - docker_info.rc != 0  
