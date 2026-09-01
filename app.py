@@ -20,8 +20,11 @@ def root():
 
 
 @app.get("/secret", response_class=PlainTextResponse)
-def secret(x_api_key: str = Header(default="", alias="X-API-Key")):
-    app_secret = os.getenv("APP_SECRET", "")
+def secret(x_api_key: str | None = Header(default=None, alias="X-API-Key")):
+    app_secret = os.getenv("APP_SECRET")
+
+    if not app_secret:
+        return PlainTextResponse("Service unavailable\n", status_code=503)
 
     if x_api_key != app_secret:
         return PlainTextResponse("Unauthorized\n", status_code=401)
