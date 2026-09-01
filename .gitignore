@@ -1,5 +1,7 @@
 actions-runner/
 tunnel.log
+
 __pycache__/
+*.py[cod]
 .venv/
 .pytest_cache/
