@@ -61,11 +61,10 @@ jobs:
         run: |
           docker push bronsboro/my-app:${{ github.sha }}
 
-      - name: Update Kubernetes deployment
+      - name: Deploy to Kubernetes
         run: |
-          kubectl set image \
-            deployment/my-app \
-            my-app=bronsboro/my-app:${{ github.sha }}
+          sed "s|image: bronsboro/my-app:latest|image: bronsboro/my-app:${{ github.sha }}|" \
+            k8s/deployment.yml | kubectl apply -f -
 
       - name: Add deployment change cause
         run: |
