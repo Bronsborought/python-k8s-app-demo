@@ -1,14 +1,36 @@
+import json
+import logging
 import os
 
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, Request
 from fastapi.responses import PlainTextResponse
 
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger("app")
 
 app = FastAPI(
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
 )
+
+
+@app.middleware("http")
+async def log_request(request: Request, call_next):
+    response = await call_next(request)
+
+    logger.info(
+        json.dumps(
+            {
+                "event": "http_request",
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+            }
+        )
+    )
+
+    return response
 
 
 @app.get("/", response_class=PlainTextResponse)
