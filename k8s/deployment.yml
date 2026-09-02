@@ -24,6 +24,15 @@ spec:
         - name: my-app
           image: bronsboro/my-app:latest
 
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
           resources:
             requests:
               cpu: "50m"
