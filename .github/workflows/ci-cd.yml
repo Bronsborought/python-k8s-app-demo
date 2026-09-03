@@ -64,20 +64,24 @@ jobs:
       - name: Deploy to Kubernetes
         run: |
           sed "s|image: bronsboro/my-app:latest|image: bronsboro/my-app:${{ github.sha }}|" \
-            k8s/deployment.yml | kubectl apply -f -
+            k8s/production/deployment.yml | kubectl apply -f -
 
       - name: Add deployment change cause
         run: |
           kubectl annotate deployment my-app \
+            -n production \
             kubernetes.io/change-cause="Deploy ${{ github.sha }}" \
             --overwrite
 
       - name: Wait for Kubernetes rollout
         run: |
-          kubectl rollout status deployment/my-app --timeout=120s
+          kubectl rollout status deployment/my-app \
+            -n production \
+            --timeout=120s
 
       - name: Show deployed image
         run: |
           kubectl get deployment my-app \
+            -n production \
             -o jsonpath='{.spec.template.spec.containers[0].image}'
           echo

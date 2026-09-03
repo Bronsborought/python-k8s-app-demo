@@ -3,6 +3,7 @@ kind: Ingress
 
 metadata:
   name: my-app-ingress
+  namespace: production
   
 spec:
   ingressClassName: nginx
