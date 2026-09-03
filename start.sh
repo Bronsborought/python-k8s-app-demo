@@ -3,7 +3,9 @@
 set -e
 
 PRODUCTION_NAMESPACE="production"
-APP_HOST="my-app.local"
+PRODUCTION_HOST="my-app.local"
+STAGING_HOST="staging.my-app.local"
+
 
 start_tunnel() {
         echo "Starting Minikube tunnel..."
@@ -15,11 +17,12 @@ start_tunnel() {
         echo "Minikube tunnel started."
 }
 
+
 wait_for_application() {
         for i in {1..20}; do
                 if APP_RESPONSE=$(curl -fsS \
                         --connect-timeout 3 --max-time 5 \
-                        "http://$APP_HOST" 2>/dev/null); then
+                        "http://$PRODUCTION_HOST" 2>/dev/null); then
                         return 0
                 fi
 
@@ -86,17 +89,20 @@ echo "Production application pods are ready."
 echo
 
 
-echo "Checking local hostname..."
-if ! getent hosts "$APP_HOST" > /dev/null; then
-        echo "$APP_HOST is not configured. Adding..."
+echo "Checking local hostnames..."
 
-        echo "127.0.0.1 $APP_HOST" | sudo tee -a \
-                 /etc/hosts > /dev/null
+for HOST in "$PRODUCTION_HOST" "$STAGING_HOST"; do
+        if ! getent hosts "$HOST" > /dev/null; then
+                echo "$HOST is not configured. Adding..."
 
-        echo "$APP_HOST was added."
-fi
+                echo "127.0.0.1 $HOST" | sudo tee -a \
+                        /etc/hosts > /dev/null
 
-echo "$APP_HOST is configured."
+                echo "$HOST was added."
+        fi
+
+        echo "$HOST is configured."
+done
 echo
 
 
