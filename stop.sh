@@ -3,13 +3,13 @@
 echo "Stopping GitHub Actions runner..."
 if pgrep -f "Runner.Listener run" > /dev/null; then
         pkill -f "Runner.Listener run"
-        echo "GitHub Actions Runner stopped."
+        echo "GitHub Actions runner stopped."
 else
-        echo "GitHub Actions Runner is not running."
+        echo "GitHub Actions runner is not running."
 fi
 echo
 
-echo "Stopping Minikube Tunnel..."
+echo "Stopping Minikube tunnel..."
 if pgrep -f "minikube tunnel" > /dev/null; then
         pkill -f "minikube tunnel"
         echo "Minikube tunnel stopped."
