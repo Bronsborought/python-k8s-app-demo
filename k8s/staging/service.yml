@@ -3,6 +3,7 @@ kind: Service
 
 metadata:
   name: my-app-service
+  namespace: staging
 
 spec:
   selector:

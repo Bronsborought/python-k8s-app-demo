@@ -3,6 +3,7 @@ kind: ConfigMap
 
 metadata:
   name: my-app-config
+  namespace: production
 
 data:
-  APP_MESSAGE: "Hello from ConfigMap"
+  APP_MESSAGE: "Hello from Production"

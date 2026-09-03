@@ -3,12 +3,13 @@ kind: Ingress
 
 metadata:
   name: my-app-ingress
-  
+  namespace: staging
+
 spec:
   ingressClassName: nginx
-  
+
   rules:
-    - host: my-app.local
+    - host: staging.my-app.local
       http:
         paths:
           - path: /
