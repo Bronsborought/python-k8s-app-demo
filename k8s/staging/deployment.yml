@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: my-app
+  namespace: staging
+
+spec:
+  replicas: 3
+
+  selector:
+    matchLabels:
+      app: my-app
+
+  template:
+    metadata:
+      labels:
+        app: my-app
+
+    spec:
+      imagePullSecrets:
+        - name: dockerhub-secret
+
+      containers:
+        - name: my-app
+          image: bronsboro/my-app:latest
+          imagePullPolicy: Always
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "128Mi"
+
+          env:
+            - name: APP_MESSAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: my-app-config
+                  key: APP_MESSAGE
+
+            - name: APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: my-app-secret
+                  key: APP_SECRET
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
