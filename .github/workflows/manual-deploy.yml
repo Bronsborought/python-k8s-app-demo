@@ -1,0 +1,92 @@
+name: Manual Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Docker image tag to deploy (commit SHA)"
+        required: true
+        type: string
+
+      environment:
+        description: "Target environment"
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  manual-deploy:
+    runs-on: self-hosted
+    environment: ${{ inputs.environment }}
+
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag }}
+      TARGET_ENV: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login \
+            -u "${{ secrets.DOCKERHUB_USERNAME }}" \
+            --password-stdin
+
+      - name: Validate image
+        run: |
+          if [ "$IMAGE_TAG" = "latest" ]; then
+            echo "Manual deployment requires a specific image tag."
+            exit 1
+          fi
+
+          docker manifest inspect \
+            "bronsboro/my-app:$IMAGE_TAG" > /dev/null
+
+          echo "Image bronsboro/my-app:$IMAGE_TAG exists."
+
+      - name: Deploy selected version
+        run: |
+          sed "s|image: bronsboro/my-app:latest|image: bronsboro/my-app:$IMAGE_TAG|" \
+            "k8s/$TARGET_ENV/deployment.yml" | kubectl apply -f -
+
+      - name: Add deployment change cause
+        run: |
+          kubectl annotate deployment my-app \
+            -n "$TARGET_ENV" \
+            kubernetes.io/change-cause="Manual deploy $IMAGE_TAG" \
+            --overwrite
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/my-app \
+            -n "$TARGET_ENV" \
+            --timeout=120s
+
+      - name: Smoke test deployed environment
+        run: |
+          if [ "$TARGET_ENV" = "production" ]; then
+            APP_HOST="my-app.local"
+          else
+            APP_HOST="staging.my-app.local"
+          fi
+
+          curl -fsS \
+            --connect-timeout 3 \
+            --max-time 10 \
+            "http://$APP_HOST/health"
+
+          curl -fsS \
+            --connect-timeout 3 \
+            --max-time 10 \
+            "http://$APP_HOST/ready"
+
+      - name: Show deployed image
+        run: |
+          kubectl get deployment my-app \
+            -n "$TARGET_ENV" \
+            -o jsonpath='{.spec.template.spec.containers[0].image}'
+          echo
