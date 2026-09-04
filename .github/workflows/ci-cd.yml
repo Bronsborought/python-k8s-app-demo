@@ -89,7 +89,7 @@ jobs:
         run: |
           kubectl rollout status deployment/my-app \
             -n staging \
-            --timeout=120s
+            --timeout=300s
 
       - name: Smoke test staging
         run: |
@@ -137,7 +137,7 @@ jobs:
         run: |
           kubectl rollout status deployment/my-app \
             -n production \
-            --timeout=120s
+            --timeout=300s
 
       - name: Show production image
         run: |
