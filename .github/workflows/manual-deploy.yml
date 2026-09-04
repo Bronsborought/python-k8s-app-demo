@@ -64,7 +64,7 @@ jobs:
         run: |
           kubectl rollout status deployment/my-app \
             -n "$TARGET_ENV" \
-            --timeout=120s
+            --timeout=300s
 
       - name: Smoke test deployed environment
         run: |
