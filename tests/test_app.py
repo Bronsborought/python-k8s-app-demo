@@ -76,3 +76,46 @@ def test_unknown_endpoint():
     response = client.get("/does-not-exist")
 
     assert response.status_code == 404
+
+def test_metrics_endpoint():
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert "http_requests_total" in response.text
+    assert "http_request_duration_seconds" in response.text
+    assert "http_request_errors_total" in response.text
+
+def  test_request_metrics():
+    client.get("/health")
+
+    response = client.get("/metrics")
+
+    assert (
+        'http_requests_total{method="GET",path="/health",status_code="200"}'
+        in response.text
+    )
+    assert (
+        'http_request_duration_seconds_count{method="GET",path="/health"}'
+        in response.text
+    )
+
+def test_error_metrics(monkeypatch):
+    monkeypatch.delenv("APP_SECRET", raising=False)
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+
+    metrics_response = client.get("/metrics")
+
+    assert (
+        'http_request_errors_total{method="GET",path="/ready",status_code="503"}'
+        in metrics_response.text
+    )
+
+def test_metrics_are_not_self_observed():
+    client.get("/metrics")
+
+    response = client.get("/metrics")
+
+    assert 'path="/metrics"' not in response.text
