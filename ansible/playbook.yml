@@ -3,6 +3,15 @@
   hosts: local
   become: true
 
+  vars:
+    kubectl_version: "v1.36.1"
+    minikube_version: "v1.38.1"
+    github_runner_version: "v2.337.0"
+    project_dir: "{{ playbook_dir | dirname }}"
+    github_runner_dir: "{{ project_dir }}/actions-runner"
+    github_repo_url: "https://github.com/Bronsborought/python-k8s-app-demo"
+    github_runner_token: "{{ lookup('ansible.builtin.env', 'GITHUB_RUNNER_TOKEN') }}"
+
   tasks:
     - name: Install base packages
       ansible.builtin.apt:
@@ -15,6 +24,34 @@
         update_cache: true
         cache_valid_time: 3600
 
+    - name: Check whether kubectl is installed
+      ansible.builtin.command:
+        cmd: kubectl version --client
+      register: kubectl_check
+      changed_when: false
+      failed_when: false  
+
+    - name: Install kubectl
+      ansible.builtin.get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+      when: kubectl_check.rc != 0
+
+    - name: Check whether Minikube is installed
+      ansible.builtin.command:
+        cmd: minikube version
+      register: minikube_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install Minikube
+      ansible.builtin.get_url:
+        url: "https://storage.googleapis.com/minikube/releases/{{ minikube_version }}/minikube-linux-amd64"
+        dest: /usr/local/bin/minikube
+        mode: '0755'
+      when: minikube_check.rc != 0
+
     - name: Check whether Docker is installed
       ansible.builtin.command:
         cmd: docker --version
@@ -24,7 +61,23 @@
 
     - name: Detect WSL
       ansible.builtin.set_fact:
-        is_wsl: "{{ 'microsoft' in (ansible_kernel | lower) }}"
+        is_wsl: "{{ 'microsoft' in (ansible_facts['kernel'] | lower) }}"
+
+    - name: Install Docker on regular Linux
+      ansible.builtin.apt:
+        name: docker.io
+        state: present
+        update_cache: true
+      when: 
+        - not is_wsl
+        - docker_check.rc != 0
+
+    - name: Ensure Docker service is running on regular Linux
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+      when: not is_wsl
 
     - name: Check whether Docker daemon is available
       ansible.builtin.command:
@@ -33,9 +86,70 @@
       changed_when: false
       failed_when: false
 
-    - name: Fail if Docker Desctop integration is unavailable in WSL
+    - name: Fail if Docker Desktop integration is unavailable in WSL
       ansible.builtin.fail:
         msg: "Docker is not available in WSL. Enable Docker WSL integration."
       when:
         - is_wsl
         - docker_info.rc != 0  
+
+    - name: Check whether GitHub Actions Runner is installed
+      ansible.builtin.stat:
+        path: "{{ github_runner_dir }}/bin/Runner.Listener"
+      register: github_runner_check
+
+    - name: Create GitHub Actions Runner directory
+      ansible.builtin.file:
+        path: "{{ github_runner_dir }}"
+        state: directory
+        mode: '0755'
+      become: false
+      when: not github_runner_check.stat.exists
+
+    - name: Download GitHub Actions Runner
+      ansible.builtin.get_url:
+        url: "https://github.com/actions/runner/releases/download/{{ github_runner_version }}/actions-runner-linux-x64-{{ github_runner_version }}.tar.gz"
+        dest: "{{ github_runner_dir }}/actions-runner.tar.gz"
+        mode: '0644'
+      become: false
+      when: not github_runner_check.stat.exists
+
+    - name: Extract GitHub Actions Runner
+      ansible.builtin.unarchive:
+        src: "/tmp/actions-runner-{{ github_runner_version }}.tar.gz"
+        dest: "{{ github_runner_dir }}"
+        remote_src: yes
+      become: false
+      when: not github_runner_check.stat.exists
+
+    - name: Install GitHub Actions Runner dependencies
+      ansible.builtin.command:
+        cmd: ./bin/installdependencies.sh
+      args:
+          chdir: "{{ github_runner_dir }}"
+      when: not github_runner_check.stat.exists
+
+    - name: Check whether GitHub Actions Runner is configured
+      ansible.builtin.stat:
+        path: "{{ github_runner_dir }}/.runner"
+      register: github_runner_config
+
+    - name: Require GitHub runner token for initial configuration
+      ansible.builtin.assert:
+        that:
+          - github_runner_token | length > 0
+        fail_msg: "Set GITHUB_RUNNER_TOKEN before configuring a new runner."
+      when: not github_runner_config.stat.exists
+
+    - name: Configure GitHub Actions Runner
+      ansible.builtin.command:
+        cmd: >
+          ./config.sh 
+          --url {{ github_repo_url }} 
+          --token {{ github_runner_token }}
+          --unattended
+          args:
+            chdir: "{{ github_runner_dir }}"
+      become: false
+      when: not github_runner_config.stat.exists  
+      no_log: true
