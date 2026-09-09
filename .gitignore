@@ -5,3 +5,5 @@ __pycache__/
 *.py[cod]
 .venv/
 .pytest_cache/
+
+scripts/dev/recreate-bootstrap-test.sh
