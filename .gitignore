@@ -1,5 +1,13 @@
 actions-runner/
 tunnel.log
+
 __pycache__/
+*.py[cod]
 .venv/
 .pytest_cache/
+
+scripts/dev/recreate-bootstrap-test.sh
+
+ANSIBLE_BOOTSTRAP_DEV_NOTES.md
+
+ansible/ANSIBLE_BOOTSTRAP_DEV_NOTES.md.md

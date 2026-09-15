@@ -1,0 +1,371 @@
+---
+- name: Bootstrap local DevOps environment
+  hosts: local
+  become: true
+
+  vars:
+    kubectl_version: "v1.36.1"
+    kubectl_sha256: "629d3f410e09bf49b64ae7079f7f0bda1191efed311f7d37fdbab0ad5b0ec2b7"
+
+    minikube_version: "v1.38.1"
+    minikube_sha256: "099477eaf248bcb5bcea8ce78a2898e93ac01461c35189da1848c3de82ecd22e"
+
+    github_runner_version: "2.337.0"
+    github_runner_sha256: "70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613"
+
+    project_dir: "{{ playbook_dir | dirname }}"
+    github_runner_dir: "{{ project_dir }}/actions-runner"
+
+    github_repo_url: "https://github.com/Bronsborought/python-k8s-app-demo"
+
+    github_runner_token: "{{ lookup('ansible.builtin.env', 'GITHUB_RUNNER_TOKEN') }}"
+
+    github_runner_name: >-
+      {{
+        lookup('ansible.builtin.env', 'GITHUB_RUNNER_NAME')
+        | default(
+            ansible_facts['hostname'] ~ '-' ~
+            (
+              lookup('ansible.builtin.env', 'WSL_DISTRO_NAME')
+              | default('linux', true)
+            ),
+            true
+          )
+      }}
+
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - git
+          - curl
+          - ca-certificates
+          - gnupg
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Check whether kubectl is installed
+      ansible.builtin.command:
+        cmd: kubectl version --client
+      register: kubectl_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install kubectl
+      ansible.builtin.get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: "0755"
+        checksum: "sha256:{{ kubectl_sha256 }}"
+      when: kubectl_check.rc != 0
+
+    - name: Check whether Minikube is installed
+      ansible.builtin.command:
+        cmd: minikube version
+      register: minikube_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install Minikube
+      ansible.builtin.get_url:
+        url: "https://storage.googleapis.com/minikube/releases/{{ minikube_version }}/minikube-linux-amd64"
+        dest: /usr/local/bin/minikube
+        mode: "0755"
+        checksum: "sha256:{{ minikube_sha256 }}"
+      when: minikube_check.rc != 0
+
+    - name: Check whether Docker is installed
+      ansible.builtin.command:
+        cmd: docker --version
+      register: docker_check
+      changed_when: false
+      failed_when: false
+
+    - name: Detect WSL
+      ansible.builtin.set_fact:
+        is_wsl: "{{ 'microsoft' in (ansible_facts['kernel'] | lower) }}"
+
+    - name: Fail if Docker Desktop WSL integration is not enabled
+      ansible.builtin.fail:
+        msg: >-
+          Docker is not available in this WSL distribution.
+          Docker Desktop WSL integration must be enabled for this distribution.
+      when:
+        - is_wsl
+        - docker_check.rc != 0
+
+    - name: Install Docker on regular Linux
+      ansible.builtin.apt:
+        name: docker.io
+        state: present
+        update_cache: true
+      when:
+        - not is_wsl
+        - docker_check.rc != 0
+
+    - name: Ensure Docker service is running on regular Linux
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+      when: not is_wsl
+
+    - name: Add bootstrap user to Docker group
+      ansible.builtin.user:
+        name: "{{ bootstrap_user }}"
+        groups: docker
+        append: true
+      when: bootstrap_user != "root"
+
+    - name: Check whether Docker daemon is available for bootstrap user
+      ansible.builtin.command:
+        cmd: docker info
+      register: docker_info
+      changed_when: false
+      failed_when: false
+      become_user: "{{ bootstrap_user }}"
+
+    - name: Fail if Docker Desktop integration is unavailable in WSL
+      ansible.builtin.fail:
+        msg: "Docker is not available in WSL. Enable Docker WSL integration."
+      when:
+        - is_wsl
+        - docker_info.rc != 0
+
+    - name: Check whether GitHub Actions Runner is installed
+      ansible.builtin.stat:
+        path: "{{ github_runner_dir }}/bin/Runner.Listener"
+      register: github_runner_check
+
+    - name: Ensure GitHub Actions Runner directory exists
+      ansible.builtin.file:
+        path: "{{ github_runner_dir }}"
+        state: directory
+        mode: "0700"
+      become: false
+
+    - name: Download GitHub Actions Runner
+      ansible.builtin.get_url:
+        url: "https://github.com/actions/runner/releases/download/v{{ github_runner_version }}/actions-runner-linux-x64-{{ github_runner_version }}.tar.gz"
+        dest: "{{ github_runner_dir }}/actions-runner.tar.gz"
+        mode: "0644"
+        checksum: "sha256:{{ github_runner_sha256 }}"
+      become: false
+      when: not github_runner_check.stat.exists
+
+    - name: Extract GitHub Actions Runner
+      ansible.builtin.unarchive:
+        src: "{{ github_runner_dir }}/actions-runner.tar.gz"
+        dest: "{{ github_runner_dir }}"
+        remote_src: true
+      become: false
+      when: not github_runner_check.stat.exists
+
+    - name: Install GitHub Actions Runner dependencies
+      ansible.builtin.command:
+        cmd: ./bin/installdependencies.sh
+      args:
+        chdir: "{{ github_runner_dir }}"
+      when: not github_runner_check.stat.exists
+
+    - name: Check whether GitHub Actions Runner is configured
+      ansible.builtin.stat:
+        path: "{{ github_runner_dir }}/.runner"
+      register: github_runner_config
+
+    - name: Request GitHub Runner registration token
+      ansible.builtin.pause:
+        prompt: "Paste GitHub Runner registration token and press Enter (input is hidden)"
+        echo: false
+      register: github_runner_token_input
+      become: false
+      no_log: true
+      when:
+        - not github_runner_config.stat.exists
+        - github_runner_token | length == 0
+
+    - name: Use prompted GitHub runner token
+      ansible.builtin.set_fact:
+        github_runner_token: "{{ github_runner_token_input.user_input }}"
+      no_log: true
+      when:
+        - not github_runner_config.stat.exists
+        - github_runner_token | length == 0
+        - github_runner_token_input is defined
+
+    - name: Require GitHub runner token for initial configuration
+      ansible.builtin.assert:
+        that:
+          - github_runner_token | length > 0
+        fail_msg: "GitHub Runner registration token cannot be empty."
+      when: not github_runner_config.stat.exists
+
+    - name: Configure GitHub Actions Runner
+      ansible.builtin.command:
+        argv:
+          - ./config.sh
+          - --url
+          - "{{ github_repo_url }}"
+          - --token
+          - "{{ github_runner_token }}"
+          - --name
+          - "{{ github_runner_name }}"
+          - --unattended
+      args:
+        chdir: "{{ github_runner_dir }}"
+      become: false
+      when: not github_runner_config.stat.exists
+      no_log: true
+
+    - name: Check GitHub Actions Runner credential files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ github_runner_dir }}/.credentials"
+        - "{{ github_runner_dir }}/.credentials_rsaparams"
+      register: github_runner_credentials
+      become: false
+
+    - name: Secure GitHub Actions Runner credential files
+      ansible.builtin.file:
+        path: "{{ item.item }}"
+        state: file
+        mode: "0600"
+      loop: "{{ github_runner_credentials.results }}"
+      when: item.stat.exists
+      become: false
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Secure GitHub Actions Runner directory
+      ansible.builtin.file:
+        path: "{{ github_runner_dir }}"
+        state: directory
+        mode: "0700"
+      become: false
+
+    - name: Validate local DevOps environment
+      dev_environment_status:
+        project_dir: "{{ project_dir }}"
+      register: dev_environment_validation
+      become: false
+
+    - name: Require local DevOps environment to be ready
+      ansible.builtin.assert:
+        that:
+          - dev_environment_validation.bootstrap_ready
+        fail_msg: >-
+          Bootstrap completed, but environment validation failed:
+          {{ dev_environment_validation.checks }}
+        success_msg: "Local DevOps environment is ready."
+
+    - name: Check Minikube cluster status
+      ansible.builtin.command:
+        cmd: minikube status
+      register: minikube_status
+      changed_when: false
+      failed_when: false
+      become: false
+
+    - name: Start Minikube cluster
+      ansible.builtin.command:
+        cmd: minikube start --driver=docker
+      when: minikube_status.rc != 0
+      become: false
+
+    - name: Enable Minikube ingress addon
+      ansible.builtin.command:
+        cmd: minikube addons enable ingress
+      changed_when: false
+      become: false
+
+    - name: Wait for ingress controller
+      ansible.builtin.command:
+        cmd: >-
+          kubectl wait
+          --namespace ingress-nginx
+          --for=condition=Ready
+          pod
+          -l app.kubernetes.io/component=controller
+          --timeout=180s
+      changed_when: false
+      become: false
+
+    - name: Create Kubernetes namespaces
+      ansible.builtin.command:
+        cmd: "kubectl apply -f {{ project_dir }}/k8s/{{ item }}/namespace.yml"
+      loop:
+        - staging
+        - production
+        - monitoring
+      register: namespace_apply
+      changed_when: >-
+        'created' in namespace_apply.stdout or
+        'configured' in namespace_apply.stdout
+      become: false
+
+    - name: Check application secrets
+      ansible.builtin.command:
+        cmd: "kubectl get secret my-app-secret -n {{ item }}"
+      loop:
+        - staging
+        - production
+      register: app_secret_checks
+      changed_when: false
+      failed_when: false
+      become: false
+
+    - name: Create missing application secrets
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - create
+          - secret
+          - generic
+          - my-app-secret
+          - -n
+          - "{{ item.item }}"
+          - "--from-literal=APP_SECRET={{ lookup('ansible.builtin.password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+      loop: "{{ app_secret_checks.results }}"
+      when: item.rc != 0
+      loop_control:
+        label: "{{ item.item }}"
+      no_log: true
+      become: false
+
+    - name: Apply application Kubernetes manifests
+      ansible.builtin.command:
+        cmd: "kubectl apply -f {{ project_dir }}/k8s/{{ item }}/"
+      loop:
+        - staging
+        - production
+      register: application_apply
+      changed_when: >-
+        'created' in application_apply.stdout or
+        'configured' in application_apply.stdout
+      become: false
+
+    - name: Apply monitoring Kubernetes manifests
+      ansible.builtin.command:
+        cmd: "kubectl apply -f {{ project_dir }}/k8s/monitoring/"
+      register: monitoring_apply
+      changed_when: >-
+        'created' in monitoring_apply.stdout or
+        'configured' in monitoring_apply.stdout
+      become: false
+
+    - name: Wait for application deployments
+      ansible.builtin.command:
+        cmd: "kubectl rollout status deployment/my-app -n {{ item }} --timeout=300s"
+      loop:
+        - staging
+        - production
+      changed_when: false
+      become: false
+
+    - name: Wait for Prometheus deployment
+      ansible.builtin.command:
+        cmd: kubectl rollout status deployment/prometheus -n monitoring --timeout=300s
+      changed_when: false
+      become: false
