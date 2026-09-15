@@ -11,3 +11,12 @@ scripts/dev/recreate-bootstrap-test.sh
 ANSIBLE_BOOTSTRAP_DEV_NOTES.md
 
 ansible/ANSIBLE_BOOTSTRAP_DEV_NOTES.md.md
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
