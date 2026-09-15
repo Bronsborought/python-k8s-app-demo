@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: monitoring
+
+data:
+  alerts.yml: |
+    groups:
+      - name: application
+        rules:
+          - alert: ProductionApplicationDown
+            expr: absent(up{job="production"} == 1)
+            for: 1m
+            labels:
+              severity: critical
+              environment: production
+            annotations:
+              summary: "Production application is unavailable"
+              description: "Prometheus has not seen any healthy production target for 1 minute."
+
+          - alert: StagingApplicationDown
+            expr: absent(up{job="staging"} == 1)
+            for: 1m
+            labels:
+              severity: warning
+              environment: staging
+            annotations:
+              summary: "Staging application is unavailable"
+              description: "Prometheus has not seen any healthy staging target for 1 minute."
+
+          - alert: High5xxErrorRate
+            expr: |
+              (
+                sum by (job) (rate(http_request_errors_total[5m]))
+                /
+                sum by (job) (rate(http_requests_total[5m]))
+              ) > 0.05
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High 5xx error rate in {{ $labels.job }}"
+              description: "More than 5% of requests have returned 5xx responses for 2 minutes."
