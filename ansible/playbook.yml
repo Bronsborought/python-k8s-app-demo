@@ -244,3 +244,128 @@
         state: directory
         mode: "0700"
       become: false
+
+    - name: Validate local DevOps environment
+      dev_environment_status:
+        project_dir: "{{ project_dir }}"
+      register: dev_environment_validation
+      become: false
+
+    - name: Require local DevOps environment to be ready
+      ansible.builtin.assert:
+        that:
+          - dev_environment_validation.bootstrap_ready
+        fail_msg: >-
+          Bootstrap completed, but environment validation failed:
+          {{ dev_environment_validation.checks }}
+        success_msg: "Local DevOps environment is ready."
+
+    - name: Check Minikube cluster status
+      ansible.builtin.command:
+        cmd: minikube status
+      register: minikube_status
+      changed_when: false
+      failed_when: false
+      become: false
+
+    - name: Start Minikube cluster
+      ansible.builtin.command:
+        cmd: minikube start --driver=docker
+      when: minikube_status.rc != 0
+      become: false
+
+    - name: Enable Minikube ingress addon
+      ansible.builtin.command:
+        cmd: minikube addons enable ingress
+      changed_when: false
+      become: false
+
+    - name: Wait for ingress controller
+      ansible.builtin.command:
+        cmd: >-
+          kubectl wait
+          --namespace ingress-nginx
+          --for=condition=Ready
+          pod
+          -l app.kubernetes.io/component=controller
+          --timeout=180s
+      changed_when: false
+      become: false
+
+    - name: Create Kubernetes namespaces
+      ansible.builtin.command:
+        cmd: "kubectl apply -f {{ project_dir }}/k8s/{{ item }}/namespace.yml"
+      loop:
+        - staging
+        - production
+        - monitoring
+      register: namespace_apply
+      changed_when: >-
+        'created' in namespace_apply.stdout or
+        'configured' in namespace_apply.stdout
+      become: false
+
+    - name: Check application secrets
+      ansible.builtin.command:
+        cmd: "kubectl get secret my-app-secret -n {{ item }}"
+      loop:
+        - staging
+        - production
+      register: app_secret_checks
+      changed_when: false
+      failed_when: false
+      become: false
+
+    - name: Create missing application secrets
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - create
+          - secret
+          - generic
+          - my-app-secret
+          - -n
+          - "{{ item.item }}"
+          - "--from-literal=APP_SECRET={{ lookup('ansible.builtin.password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+      loop: "{{ app_secret_checks.results }}"
+      when: item.rc != 0
+      loop_control:
+        label: "{{ item.item }}"
+      no_log: true
+      become: false
+
+    - name: Apply application Kubernetes manifests
+      ansible.builtin.command:
+        cmd: "kubectl apply -f {{ project_dir }}/k8s/{{ item }}/"
+      loop:
+        - staging
+        - production
+      register: application_apply
+      changed_when: >-
+        'created' in application_apply.stdout or
+        'configured' in application_apply.stdout
+      become: false
+
+    - name: Apply monitoring Kubernetes manifests
+      ansible.builtin.command:
+        cmd: "kubectl apply -f {{ project_dir }}/k8s/monitoring/"
+      register: monitoring_apply
+      changed_when: >-
+        'created' in monitoring_apply.stdout or
+        'configured' in monitoring_apply.stdout
+      become: false
+
+    - name: Wait for application deployments
+      ansible.builtin.command:
+        cmd: "kubectl rollout status deployment/my-app -n {{ item }} --timeout=300s"
+      loop:
+        - staging
+        - production
+      changed_when: false
+      become: false
+
+    - name: Wait for Prometheus deployment
+      ansible.builtin.command:
+        cmd: kubectl rollout status deployment/prometheus -n monitoring --timeout=300s
+      changed_when: false
+      become: false
