@@ -7,6 +7,9 @@ metadata:
 spec:
   replicas: 1
 
+  strategy:
+    type: Recreate
+
   selector:
     matchLabels:
       app: prometheus
@@ -37,6 +40,9 @@ spec:
             - name: prometheus-data
               mountPath: /prometheus
 
+            - name: prometheus-rules
+              mountPath: /etc/prometheus/rules
+
       volumes:
         - name: prometheus-config
           configMap:
@@ -45,3 +51,7 @@ spec:
         - name: prometheus-data
           persistentVolumeClaim:
             claimName: prometheus-data
+
+        - name: prometheus-rules
+          configMap:
+            name: prometheus-rules
