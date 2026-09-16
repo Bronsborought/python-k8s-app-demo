@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: my-app
+  namespace: production
+
+spec:
+  replicas: 3
+
+  selector:
+    matchLabels:
+      app: my-app
+
+  template:
+    metadata:
+      labels:
+        app: my-app
+
+    spec:
+
+      containers:
+        - name: my-app
+          image: europe-central2-docker.pkg.dev/python-k8s-app-demo-dt26/python-k8s-app/my-app:7d6aef51dd4f173091cb33e9391059a68413a470
+          imagePullPolicy: Always
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "128Mi"
+
+          env:
+            - name: APP_MESSAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: my-app-config
+                  key: APP_MESSAGE
+
+            - name: APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: my-app-secret
+                  key: APP_SECRET
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+              
