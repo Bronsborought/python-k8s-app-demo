@@ -21,6 +21,8 @@ spec:
 
       containers:
         - name: my-app
+          ports:
+            - containerPort: 8000
           image: europe-central2-docker.pkg.dev/python-k8s-app-demo-dt26/python-k8s-app/my-app:7d6aef51dd4f173091cb33e9391059a68413a470
           imagePullPolicy: Always
 
