@@ -1,92 +1,105 @@
-name: Manual Deployment
+name: Cloud Rollback
 
 on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Docker image tag to deploy (commit SHA)"
+        description: "Immutable image tag to rollback to (full commit SHA)"
         required: true
         type: string
 
-      environment:
-        description: "Target environment"
-        required: true
-        default: staging
-        type: choice
-        options:
-          - staging
-          - production
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: python-k8s-app-demo-dt26
+  REGION: europe-central2
+  AR_REPOSITORY: python-k8s-app
+  IMAGE_NAME: my-app
+  GKE_CLUSTER: python-k8s-app
+  PRODUCTION_NAMESPACE: production
+  WIF_PROVIDER: projects/518693990652/locations/global/workloadIdentityPools/github-actions/providers/github
+  DEPLOY_SERVICE_ACCOUNT: github-actions-deploy@python-k8s-app-demo-dt26.iam.gserviceaccount.com
+  IMAGE_TAG: ${{ inputs.image_tag }}
 
 jobs:
-  manual-deploy:
-    runs-on: self-hosted
-    environment: ${{ inputs.environment }}
-
-    env:
-      IMAGE_TAG: ${{ inputs.image_tag }}
-      TARGET_ENV: ${{ inputs.environment }}
+  validate-image:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Login to Docker Hub
+      - name: Validate image tag
         run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login \
-            -u "${{ secrets.DOCKERHUB_USERNAME }}" \
-            --password-stdin
-
-      - name: Validate image
-        run: |
-          if [ "$IMAGE_TAG" = "latest" ]; then
-            echo "Manual deployment requires a specific image tag."
+          if [[ ! "$IMAGE_TAG" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "image_tag must be a full 40-character commit SHA."
             exit 1
           fi
 
-          docker manifest inspect \
-            "bronsboro/my-app:$IMAGE_TAG" > /dev/null
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
 
-          echo "Image bronsboro/my-app:$IMAGE_TAG exists."
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
 
-      - name: Deploy selected version
+      - name: Validate rollback image
         run: |
-          sed "s|image: bronsboro/my-app:latest|image: bronsboro/my-app:$IMAGE_TAG|" \
-            "k8s/$TARGET_ENV/deployment.yml" | kubectl apply -f -
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPOSITORY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
-      - name: Add deployment change cause
+          gcloud artifacts docker images describe "$IMAGE" > /dev/null
+
+          echo "Rollback image exists: $IMAGE"
+
+  rollback-production:
+    needs: validate-image
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v3
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.REGION }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Rollback production
         run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPOSITORY}/${IMAGE_NAME}:${IMAGE_TAG}"
+
+          kubectl set image deployment/my-app \
+            my-app="$IMAGE" \
+            --namespace="${PRODUCTION_NAMESPACE}"
+
           kubectl annotate deployment my-app \
-            -n "$TARGET_ENV" \
-            kubernetes.io/change-cause="Manual deploy $IMAGE_TAG" \
+            --namespace="${PRODUCTION_NAMESPACE}" \
+            kubernetes.io/change-cause="Rollback to ${IMAGE_TAG}" \
             --overwrite
 
-      - name: Wait for rollout
-        run: |
           kubectl rollout status deployment/my-app \
-            -n "$TARGET_ENV" \
-            --timeout=300s
+            --namespace="${PRODUCTION_NAMESPACE}" \
+            --timeout=5m
 
-      - name: Smoke test deployed environment
+      - name: Smoke test production
         run: |
-          if [ "$TARGET_ENV" = "production" ]; then
-            APP_HOST="my-app.local"
-          else
-            APP_HOST="staging.my-app.local"
-          fi
+          curl -fsS https://app.tarakanovds.lol/health
+          echo
 
-          curl -fsS \
-            --connect-timeout 3 \
-            --max-time 10 \
-            "http://$APP_HOST/health"
-
-          curl -fsS \
-            --connect-timeout 3 \
-            --max-time 10 \
-            "http://$APP_HOST/ready"
+          curl -fsS https://app.tarakanovds.lol/ready
+          echo
 
       - name: Show deployed image
         run: |
           kubectl get deployment my-app \
-            -n "$TARGET_ENV" \
-            -o jsonpath='{.spec.template.spec.containers[0].image}'
-          echo
+            --namespace="${PRODUCTION_NAMESPACE}" \
+            -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
