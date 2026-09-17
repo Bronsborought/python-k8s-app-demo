@@ -16,7 +16,7 @@ env:
   AR_REPOSITORY: python-k8s-app
   IMAGE_NAME: my-app
   GKE_CLUSTER: python-k8s-app
-  GKE_NAMESPACE: production
+  STAGING_NAMESPACE: staging
   WIF_PROVIDER: projects/518693990652/locations/global/workloadIdentityPools/github-actions/providers/github
   DEPLOY_SERVICE_ACCOUNT: github-actions-deploy@python-k8s-app-demo-dt26.iam.gserviceaccount.com
 
@@ -71,22 +71,38 @@ jobs:
           location: ${{ env.REGION }}
           project_id: ${{ env.PROJECT_ID }}
 
-      - name: Check GKE access
+      - name: Deploy to GKE staging
         run: |
-          kubectl get deployment my-app \
-            --namespace="${GKE_NAMESPACE}"
+          kubectl apply -f k8s/gke/staging/namespace.yml
 
-      - name: Deploy image to GKE production
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          kubectl set image deployment/my-app \
-            my-app="$IMAGE" \
-            --namespace="${GKE_NAMESPACE}"
+          kubectl apply \
+            -f k8s/gke/staging/configmap.yml \
+            -f k8s/gke/staging/service-account.yml \
+            -f k8s/gke/staging/secret-provider-class.yml \
+            -f k8s/gke/staging/service.yml
+
+          sed -i "s|image: .*|image: ${IMAGE}|" \
+            k8s/gke/staging/deployment.yml
+
+          kubectl apply -f k8s/gke/staging/deployment.yml
 
           kubectl rollout status deployment/my-app \
-            --namespace="${GKE_NAMESPACE}" \
+            --namespace="${STAGING_NAMESPACE}" \
             --timeout=5m
 
           kubectl get deployment my-app \
-            --namespace="${GKE_NAMESPACE}" \
+            --namespace="${STAGING_NAMESPACE}" \
             -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+
+      - name: Smoke test staging
+        run: |
+          kubectl delete pod staging-smoke-test \
+            --namespace="${STAGING_NAMESPACE}" \
+            --ignore-not-found
+
+          kubectl run staging-smoke-test \
+            --namespace="${STAGING_NAMESPACE}" \
+            --image=curlimages/curl \
+            --restart=Never \
+            --rm -i \
+            -- curl -fsS http://my-app-service/health
