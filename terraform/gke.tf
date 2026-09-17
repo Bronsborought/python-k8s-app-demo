@@ -5,6 +5,10 @@ resource "google_container_cluster" "autopilot" {
   enable_autopilot    = true
   deletion_protection = false
 
+  secret_manager_config {
+    enabled = true
+  }
+
   release_channel {
     channel = "REGULAR"
   }
