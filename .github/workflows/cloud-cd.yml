@@ -3,7 +3,7 @@ name: Cloud CD
 on:
   push:
     branches:
-      - feature/cloud-cicd
+      - main
   workflow_dispatch:
 
 permissions:
@@ -17,11 +17,12 @@ env:
   IMAGE_NAME: my-app
   GKE_CLUSTER: python-k8s-app
   STAGING_NAMESPACE: staging
+  PRODUCTION_NAMESPACE: production
   WIF_PROVIDER: projects/518693990652/locations/global/workloadIdentityPools/github-actions/providers/github
   DEPLOY_SERVICE_ACCOUNT: github-actions-deploy@python-k8s-app-demo-dt26.iam.gserviceaccount.com
 
 jobs:
-  verify-gcp-auth:
+  build-and-deploy-staging:
     runs-on: ubuntu-latest
 
     steps:
@@ -106,3 +107,42 @@ jobs:
             --restart=Never \
             --rm -i \
             -- curl -fsS http://my-app-service/health
+
+  deploy-production:
+    needs: build-and-deploy-staging
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v3
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.REGION }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Deploy to GKE production
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPOSITORY}/${IMAGE_NAME}:${GITHUB_SHA}"
+
+          kubectl set image deployment/my-app \
+            my-app="$IMAGE" \
+            --namespace="${PRODUCTION_NAMESPACE}"
+
+          kubectl rollout status deployment/my-app \
+            --namespace="${PRODUCTION_NAMESPACE}" \
+            --timeout=5m
+
+          kubectl get deployment my-app \
+            --namespace="${PRODUCTION_NAMESPACE}" \
+            -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
