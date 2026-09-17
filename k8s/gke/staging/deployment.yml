@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: my-app
+  namespace: staging
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: my-app
+
+  template:
+    metadata:
+      labels:
+        app: my-app
+
+    spec:
+      serviceAccountName: my-app
+
+      containers:
+        - name: my-app
+          ports:
+            - containerPort: 8000
+
+          image: europe-central2-docker.pkg.dev/python-k8s-app-demo-dt26/python-k8s-app/my-app:workload-identity-fix-20260917005308
+          imagePullPolicy: Always
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "128Mi"
+
+          env:
+            - name: APP_MESSAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: my-app-config
+                  key: APP_MESSAGE
+
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /var/secrets
+              readOnly: true
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store-gke.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: my-app-secrets-gke

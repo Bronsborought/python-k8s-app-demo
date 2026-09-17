@@ -20,3 +20,5 @@ ansible/ANSIBLE_BOOTSTRAP_DEV_NOTES.md.md
 !*.tfvars.example
 crash.log
 crash.*.log
+gha-creds-*.json
+gha-kubeconfig-*
