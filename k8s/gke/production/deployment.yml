@@ -18,12 +18,14 @@ spec:
         app: my-app
 
     spec:
+      serviceAccountName: my-app
 
       containers:
         - name: my-app
           ports:
             - containerPort: 8000
-          image: europe-central2-docker.pkg.dev/python-k8s-app-demo-dt26/python-k8s-app/my-app:7d6aef51dd4f173091cb33e9391059a68413a470
+
+          image: europe-central2-docker.pkg.dev/python-k8s-app-demo-dt26/python-k8s-app/my-app:workload-identity-fix-20260917005308
           imagePullPolicy: Always
 
           securityContext:
@@ -50,11 +52,10 @@ spec:
                   name: my-app-config
                   key: APP_MESSAGE
 
-            - name: APP_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: my-app-secret
-                  key: APP_SECRET
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /var/secrets
+              readOnly: true
 
           readinessProbe:
             httpGet:
@@ -65,4 +66,11 @@ spec:
             httpGet:
               path: /health
               port: 8000
-              
+
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store-gke.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: my-app-secrets-gke

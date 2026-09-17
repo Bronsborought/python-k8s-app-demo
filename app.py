@@ -115,6 +115,13 @@ def ready():
     app_secret = os.getenv("APP_SECRET")
 
     if not app_secret:
+        try:
+            with open("/var/secrets/APP_SECRET", encoding="utf-8") as secret_file:
+                app_secret = secret_file.read().strip()
+        except FileNotFoundError:
+            app_secret = None
+
+    if not app_secret:
         return PlainTextResponse("Not ready\n", status_code=503)
 
     return PlainTextResponse("Ready\n", status_code=200)
@@ -123,6 +130,13 @@ def ready():
 @app.get("/secret", response_class=PlainTextResponse)
 def secret(x_api_key: str | None = Header(default=None, alias="X-API-Key")):
     app_secret = os.getenv("APP_SECRET")
+
+    if not app_secret:
+        try:
+            with open("/var/secrets/APP_SECRET", encoding="utf-8") as secret_file:
+                app_secret = secret_file.read().strip()
+        except FileNotFoundError:
+            app_secret = None
 
     if not app_secret:
         return PlainTextResponse("Service unavailable\n", status_code=503)
