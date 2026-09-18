@@ -1,0 +1,10 @@
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+
+metadata:
+  name: my-app-backend-config
+  namespace: production
+
+spec:
+  securityPolicy:
+    name: my-app-production-waf
