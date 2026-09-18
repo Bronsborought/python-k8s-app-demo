@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import sys
 import time
 
 from fastapi import FastAPI, Header, Request, Response
@@ -12,7 +13,11 @@ from prometheus_client import (
     generate_latest,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    stream=sys.stdout,
+)
 logger = logging.getLogger("app")
 
 HTTP_REQUESTS_TOTAL = Counter(
@@ -79,6 +84,7 @@ async def observe_request(request: Request, call_next):
         logger.info(
             json.dumps(
                 {
+                    "severity": "INFO",
                     "event": "http_request",
                     "method": request.method,
                     "path": request.url.path,
