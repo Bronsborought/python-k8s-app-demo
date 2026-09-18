@@ -117,7 +117,8 @@ jobs:
             -f k8s/gke/staging/configmap.yml \
             -f k8s/gke/staging/service-account.yml \
             -f k8s/gke/staging/secret-provider-class.yml \
-            -f k8s/gke/staging/service.yml
+            -f k8s/gke/staging/service.yml \
+            -f k8s/gke/staging/pod-monitoring.yml
 
           sed -i "s|image: .*|image: ${IMAGE}|" \
             k8s/gke/staging/deployment.yml
@@ -171,6 +172,8 @@ jobs:
       - name: Deploy to GKE production
         run: |
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPOSITORY}/${IMAGE_NAME}:${GITHUB_SHA}"
+
+          kubectl apply -f k8s/gke/production/pod-monitoring.yml
 
           kubectl set image deployment/my-app \
             my-app="$IMAGE" \
