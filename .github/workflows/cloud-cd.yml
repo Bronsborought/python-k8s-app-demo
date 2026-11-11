@@ -45,6 +45,7 @@ jobs:
 
   build-push:
     needs: test
+    if: github.event_name == 'workflow_dispatch' || vars.GCP_CD_ENABLED == 'true'
     runs-on: ubuntu-latest
 
     steps:
