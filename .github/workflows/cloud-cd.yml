@@ -175,7 +175,10 @@ jobs:
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPOSITORY}/${IMAGE_NAME}:${GITHUB_SHA}"
 
           kubectl apply -f k8s/gke/production/backend-config.yml
+          kubectl apply -f k8s/gke/production/frontend-config.yml
+          kubectl apply -f k8s/gke/production/managed-certificate.yml
           kubectl apply -f k8s/gke/production/service.yml
+          kubectl apply -f k8s/gke/production/ingress.yml
           kubectl apply -f k8s/gke/production/pod-monitoring.yml
 
           kubectl set image deployment/my-app \
